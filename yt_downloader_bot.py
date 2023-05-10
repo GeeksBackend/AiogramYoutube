@@ -1,5 +1,5 @@
 from dotenv import load_dotenv
-import os, logging
+import os, logging, sqlite3, time
 from aiogram import Bot, Dispatcher, types, executor
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -12,6 +12,17 @@ bot = Bot(os.environ.get('KEY'))
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 logging.basicConfig(level=logging.INFO)
+db = sqlite3.connect('database.db')
+cursor = db.cursor()
+cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+    id INT,
+    username VARCHAR(150),
+    first_name VARCHAR(100),
+    last_name VARCHAR(100),
+    created VARCHAR(200)
+);
+""")
+cursor.connection.commit()
 
 buttons1 = [KeyboardButton('/video'), KeyboardButton('/audio')]
 keyboard1 = ReplyKeyboardMarkup(resize_keyboard=True).add(*buttons1)
@@ -32,13 +43,41 @@ class States_for_video(StatesGroup):
 class States_for_audio(StatesGroup):
     audio_link = State()
 
+class MailingState(StatesGroup):
+    mail_text = State()
 
 @dp.message_handler(commands=['start'])
 async def start(message: types.Message):
+    cursor=db.cursor()
+    cursor.execute(f"SELECT id FROM users WHERE id = {message.from_user.id};")
+    res = cursor.fetchall()
+    if res == []:
+        cursor.execute(f"""INSERT INTO users VALUES (
+            {message.from_user.id},
+            '{message.from_user.username}',
+            '{message.from_user.first_name}',
+            '{message.from_user.last_name}',
+            '{time.ctime()}'
+        )""")
+        cursor.connection.commit()
     await message.answer(f'Привет, {message.from_user.first_name}! '
                          f'Я помогу вам скачать видео или аудио с YouTube.'
                          , reply_markup=keyboard1)
 
+@dp.message_handler(commands='mail')
+async def get_mail_text(message:types.Message):
+    await message.answer("Введите текст для рассылки:")
+    await MailingState.mail_text.set()
+
+@dp.message_handler(state=MailingState.mail_text)
+async def mailing(message:types.Message):
+    await message.answer("Начинаем")
+    cursor = db.cursor()
+    cursor.execute("SELECT id FROM users;")
+    users = cursor.fetchall()
+    for user in users:
+        await bot.send_message(user[0], message.text)
+    await message.answer(f"Готово")
 
 @dp.message_handler(commands=['video'], state=None)
 async def video(message: types.Message):
