@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import os, logging, sqlite3, time
 from aiogram import Bot, Dispatcher, types, executor
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
@@ -33,6 +33,11 @@ keyboard2 = ReplyKeyboardMarkup(resize_keyboard=True).add(*buttons2)
 buttons4 = [KeyboardButton('/yes'), KeyboardButton('/no')]
 keyboard4 = ReplyKeyboardMarkup(resize_keyboard=True).add(*buttons4)
 
+inline_buttons1 = [
+    InlineKeyboardButton('Видео', callback_data='inline_video'),
+    InlineKeyboardButton('Аудио', callback_data='inline_audio') 
+]
+inline1 = InlineKeyboardMarkup().add(*inline_buttons1)
 
 class States_for_video(StatesGroup):
     video_link = State()
@@ -62,15 +67,25 @@ async def start(message: types.Message):
         cursor.connection.commit()
     await message.answer(f'Привет, {message.from_user.first_name}! '
                          f'Я помогу вам скачать видео или аудио с YouTube.'
-                         , reply_markup=keyboard1)
+                         , reply_markup=inline1)
+
+@dp.callback_query_handler(lambda call: call)
+async def all_inline(call):
+    if call.data == "inline_video":
+        await video(call.message)
+    elif call.data == "inline_audio":
+        await audio(call.message)
 
 @dp.message_handler(commands='mail')
 async def get_mail_text(message:types.Message):
-    await message.answer("Введите текст для рассылки:")
-    await MailingState.mail_text.set()
+    if message.from_user.id in [731982105]:
+        await message.answer("Введите текст для рассылки:")
+        await MailingState.mail_text.set()
+    else:
+        await message.answer("У вас нет прав")
 
 @dp.message_handler(state=MailingState.mail_text)
-async def mailing(message:types.Message):
+async def mailing(message:types.Message, state:FSMContext):
     await message.answer("Начинаем")
     cursor = db.cursor()
     cursor.execute("SELECT id FROM users;")
@@ -78,6 +93,7 @@ async def mailing(message:types.Message):
     for user in users:
         await bot.send_message(user[0], message.text)
     await message.answer(f"Готово")
+    await state.finish()
 
 @dp.message_handler(commands=['video'], state=None)
 async def video(message: types.Message):
